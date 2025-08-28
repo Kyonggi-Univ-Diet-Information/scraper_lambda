@@ -16,7 +16,7 @@ $LAMBDA_EXEC_ROLE_NAME      = "LambdaExec_S3Put"
 $MEMORY_MB   = 1024
 $TIMEOUT_SEC = 120
 $ENV_VARS = @{
-  S3_BUCKET    = "dorm-week-menu"   # 미리 생성한 S3 버킷
+  S3_BUCKET    = "kiryong-menu-csv"   # 미리 생성한 S3 버킷
   S3_PREFIX    = ""
   CSV_NAME     = "output.csv"
   CSV_UTF8_SIG = "1"
@@ -24,7 +24,7 @@ $ENV_VARS = @{
 
 # (선택) 배포용 Role을 Assume 해서 실행하려면 true 로
 $USE_ASSUME_ROLE = $false
-$DEPLOY_ROLE_ARN = "arn:aws:iam::<ACCOUNT_ID>:role/LambdaDeployer"  # 실제 ARN으로 교체
+$DEPLOY_ROLE_ARN = "arn:aws:iam::381305464439:role/LambdaDeployer"  # 실제 ARN으로 교체
 ##################################################
 
 function Require-Cmd { param([string]$name)
@@ -44,7 +44,7 @@ Require-Cmd "docker"
 
 # (선택) AssumeRole
 if ($USE_ASSUME_ROLE) {
-  if ($DEPLOY_ROLE_ARN -like "*<ACCOUNT_ID>*") {
+  if ($DEPLOY_ROLE_ARN -like "*381305464439*") {
     throw "Please set a real DEPLOY_ROLE_ARN before USE_ASSUME_ROLE=true."
   }
   Write-Host "==> Assuming role: $DEPLOY_ROLE_ARN"
