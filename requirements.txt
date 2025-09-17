@@ -1,2 +1,2 @@
-scrapy
 boto3
+scrapy
