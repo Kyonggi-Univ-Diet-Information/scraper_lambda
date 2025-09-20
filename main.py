@@ -1,4 +1,3 @@
-# main.py
 import os
 import datetime
 import logging
@@ -8,18 +7,26 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.settings import Settings
 from dorm_spider import DormSpider
 
-from dotenv import load_dotenv
-load_dotenv()  # 같은 폴더의 .env 읽음
+import dotenv
 
-S3_BUCKET      = os.getenv("S3_BUCKET")                 # 필수
-S3_PREFIX      = os.getenv("S3_PREFIX", "./")  # 선택
-CSV_NAME       = os.getenv("CSV_NAME", "output.csv")    # 선택
-CSV_UTF8_SIG   = os.getenv("CSV_UTF8_SIG", "1") == "1"  # 기본 True
-SCRAPY_LOG_LVL = os.getenv("SCRAPY_LOG_LVL", "INFO")
+dotenv.load_dotenv()
+
+# Lambda 환경변수로부터 직접 가져오기
+# S3_BUCKET      = os.environ.get("S3_BUCKET")                 # 필수
+# S3_PREFIX      = os.environ.get("S3_PREFIX")           # 선택
+# CSV_NAME       = os.environ.get("CSV_NAME")    # 선택
+# CSV_UTF8_SIG   = os.environ.get("CSV_UTF8_SIG")  # 기본 True
+# SCRAPY_LOG_LVL = os.environ.get("SCRAPY_LOG_LVL")
+
+S3_BUCKET      = os.environ.get("S3_BUCKET")                 # 필수
+S3_PREFIX      = os.environ.get("S3_PREFIX")           # 선택
+CSV_NAME       = os.environ.get("CSV_NAME")    # 선택
+CSV_UTF8_SIG   = os.environ.get("CSV_UTF8_SIG")  # 기본 True
+SCRAPY_LOG_LVL = os.environ.get("SCRAPY_LOG_LVL")
 
 s3 = boto3.client("s3")
 
-# main.py 상단 어딘가에 추가
+
 class EncodingFixerMiddleware:
     """
     응답의 실제 인코딩을 점검해서 cp949/euc-kr 등을 강제로 지정.
@@ -49,7 +56,7 @@ class EncodingFixerMiddleware:
 def build_scrapy_settings(csv_path: str) -> Settings:
     s = Settings()
     s.set("DOWNLOADER_MIDDLEWARES", {
-        "main.EncodingFixerMiddleware": 543,  # Lambda에선 모듈명이 'main'
+        "main.EncodingFixerMiddleware": 543,
     })
     s.set("ROBOTSTXT_OBEY", False)
     s.set("DOWNLOAD_TIMEOUT", 30)
@@ -67,8 +74,8 @@ def build_scrapy_settings(csv_path: str) -> Settings:
             "fields": ["date", "breakfast", "lunch", "dinner"],
         }
     })
-	
     return s
+
 
 def run_spider_to_csv(csv_path: str):
     logging.basicConfig(
@@ -79,10 +86,12 @@ def run_spider_to_csv(csv_path: str):
     process.crawl(DormSpider)
     process.start()
 
+
 def build_s3_key() -> str:
     t = datetime.datetime.utcnow()
     base = os.path.splitext(CSV_NAME)[0]
     return f"{base}.csv"
+
 
 def lambda_handler(event, context):
     if not S3_BUCKET:
@@ -101,6 +110,7 @@ def lambda_handler(event, context):
     )
 
     return {"ok": True, "bucket": S3_BUCKET, "key": s3_key}
+
 
 if __name__ == "__main__":
     print(lambda_handler({}, None))

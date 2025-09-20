@@ -2,6 +2,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Docker 이미지 빌드 → ECR 푸시 → Lambda 함수 생성/업데이트 → 환경 변수 적용까지 한 번에 해주는 자동 배포 파워셸 스크립트
+
 ########## EDIT HERE (환경에 맞게 수정) ##########
 $AWS_REGION            = "ap-northeast-2"       # 서울
 $ECR_REPO_NAME         = "dorm-scraper"         # ECR 리포 이름
