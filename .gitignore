@@ -2,3 +2,4 @@ __pycache__
 output.csv
 response.json
 .env
+*.ps1

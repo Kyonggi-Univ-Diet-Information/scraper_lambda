@@ -7,7 +7,17 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.settings import Settings
 from dorm_spider import DormSpider
 
+import dotenv
+
+dotenv.load_dotenv()
+
 # Lambda 환경변수로부터 직접 가져오기
+# S3_BUCKET      = os.environ.get("S3_BUCKET")                 # 필수
+# S3_PREFIX      = os.environ.get("S3_PREFIX")           # 선택
+# CSV_NAME       = os.environ.get("CSV_NAME")    # 선택
+# CSV_UTF8_SIG   = os.environ.get("CSV_UTF8_SIG")  # 기본 True
+# SCRAPY_LOG_LVL = os.environ.get("SCRAPY_LOG_LVL")
+
 S3_BUCKET      = os.environ.get("S3_BUCKET")                 # 필수
 S3_PREFIX      = os.environ.get("S3_PREFIX")           # 선택
 CSV_NAME       = os.environ.get("CSV_NAME")    # 선택
