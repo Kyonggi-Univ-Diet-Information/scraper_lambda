@@ -164,3 +164,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1
 ### 주의
 - `requirements.txt` 가 버전을 고정하지 않아서 설치 시점마다 Scrapy 버전이 다르다 (로컬 2.13.3, 서버 2.19.0). 또 깨지면 `scrapy==<동작하던 버전>` 으로 고정할 것.
 - 로컬에서 고친 파일은 **서버에 직접 복사**해야 반영된다 (`main.py`, `dorm_spider.py`, `weekly_check.py`).
+<img width="1587" height="2245" alt="DB 저장 API 요청" src="https://github.com/user-attachments/assets/7d993aaf-8607-4a46-bac5-5580bd0f0402" />
