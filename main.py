@@ -1,6 +1,7 @@
 import os
 import datetime
 import logging
+import multiprocessing
 import boto3
 
 from scrapy.crawler import CrawlerProcess
@@ -19,12 +20,16 @@ dotenv.load_dotenv()
 # SCRAPY_LOG_LVL = os.environ.get("SCRAPY_LOG_LVL")
 
 S3_BUCKET      = os.environ.get("S3_BUCKET")                 # 필수
-S3_PREFIX      = os.environ.get("S3_PREFIX")           # 선택
+S3_PREFIX      = os.environ.get("S3_PREFIX") or ""     # 선택 (없으면 "Noneoutput.csv"가 되는 것 방지)
 CSV_NAME       = os.environ.get("CSV_NAME")    # 선택
 CSV_UTF8_SIG   = os.environ.get("CSV_UTF8_SIG")  # 기본 True
 SCRAPY_LOG_LVL = os.environ.get("SCRAPY_LOG_LVL")
 
 s3 = boto3.client("s3")
+
+# boto DEBUG 로그는 서명·Access Key ID까지 찍혀서 길고 민감함 → WARNING 이상만
+for _name in ("boto3", "botocore", "s3transfer", "urllib3"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 
 class EncodingFixerMiddleware:
@@ -59,6 +64,9 @@ def build_scrapy_settings(csv_path: str) -> Settings:
         "main.EncodingFixerMiddleware": 543,
     })
     s.set("ROBOTSTXT_OBEY", False)
+    # 디버그용 원격 접속 기능 끔 (telnet 비밀번호 로그 노출, 최신 Scrapy는 HTTP 원격제어 포트까지 엶)
+    s.set("TELNETCONSOLE_ENABLED", False)
+    s.set("EXTENSIONS", {"scrapy.extensions.remote_control.RemoteControl": None})
     s.set("DOWNLOAD_TIMEOUT", 30)
     s.set("CONCURRENT_REQUESTS", 8)
     s.set("DEFAULT_REQUEST_HEADERS", {
@@ -77,7 +85,7 @@ def build_scrapy_settings(csv_path: str) -> Settings:
     return s
 
 
-def run_spider_to_csv(csv_path: str):
+def _crawl(csv_path: str):
     logging.basicConfig(
         level=getattr(logging, SCRAPY_LOG_LVL.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(message)s"
@@ -85,6 +93,17 @@ def run_spider_to_csv(csv_path: str):
     process = CrawlerProcess(build_scrapy_settings(csv_path))
     process.crawl(DormSpider)
     process.start()
+
+
+def run_spider_to_csv(csv_path: str):
+    # Twisted reactor는 프로세스당 한 번만 시작 가능 → 웜 컨테이너 재호출 시 ReactorNotRestartable.
+    # 매 호출마다 자식 프로세스에서 크롤링해서 reactor를 새로 띄운다.
+    # (Lambda엔 /dev/shm이 없어서 Pool/Queue는 못 쓰고 Process만 사용)
+    p = multiprocessing.Process(target=_crawl, args=(csv_path,))
+    p.start()
+    p.join()
+    if p.exitcode != 0:
+        raise RuntimeError(f"Spider process failed (exitcode={p.exitcode})")
 
 
 def build_s3_key() -> str:
@@ -97,8 +116,16 @@ def lambda_handler(event, context):
     if not S3_BUCKET:
         return {"ok": False, "error": "Missing S3_BUCKET env"}
 
-    local_csv = f"{CSV_NAME}"
+    local_csv = f"{S3_PREFIX}{CSV_NAME}"
     run_spider_to_csv(local_csv)
+
+    # 크롤링 결과 확인
+    with open(local_csv, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    if len(lines) <= 1:
+        # 헤더만 있고 데이터 없음
+        raise Exception("No data scraped (all empty)")
 
     s3_key = build_s3_key()
     content_type = "text/csv; charset=utf-8"

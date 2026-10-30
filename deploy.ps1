@@ -40,6 +40,11 @@ function New-TmpFile {
   Get-Item $p
 }
 
+# PS 5.1의 Set-Content -Encoding UTF8은 BOM을 붙임 → AWS CLI가 file:// 를 못 읽음 ("could not be decoded")
+function Write-Utf8NoBom { param([string]$path, [string]$text)
+  [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false))
+}
+
 Write-Host "==> Checking prerequisites..."
 Require-Cmd "aws"
 Require-Cmd "docker"
@@ -78,10 +83,9 @@ try {
 }
 
 Write-Host "==> ECR login..."
-$pw = aws ecr get-login-password --region $AWS_REGION
-if (-not $pw) { throw "Failed to get ECR password. Credentials may be expired." }
-$pw | docker login --username AWS --password-stdin $ECR_BASE
-if ($LASTEXITCODE -ne 0) { throw "ECR login failed." }
+# PowerShell 5.1 파이프는 네이티브 exe로 문자열을 넘길 때 토큰을 깨뜨려서 400 Bad Request가 남 → cmd 파이프로 바이트 그대로 전달
+cmd /c "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_BASE"
+if ($LASTEXITCODE -ne 0) { throw "ECR login failed. Credentials may be expired." }
 
 Write-Host "==> Docker build/tag/push ($IMAGE_URI)..."
 docker build -t $IMAGE_URI .
@@ -107,7 +111,7 @@ if ($CREATE_EXEC_ROLE_IF_NEEDED) {
 }
 "@
     $tmpTrust = New-TmpFile
-    $trust | Set-Content -LiteralPath $tmpTrust.FullName -NoNewline -Encoding UTF8
+    Write-Utf8NoBom $tmpTrust.FullName $trust
     aws iam create-role --role-name $LAMBDA_EXEC_ROLE_NAME --assume-role-policy-document "file://$($tmpTrust.FullName)" | Out-Null
 
     # CloudWatch Logs 기본 정책 (정확한 ARN 주의)
@@ -127,7 +131,7 @@ if ($CREATE_EXEC_ROLE_IF_NEEDED) {
 }
 "@
       $tmpPol = New-TmpFile
-      $s3pol | Set-Content -LiteralPath $tmpPol.FullName -NoNewline -Encoding UTF8
+      Write-Utf8NoBom $tmpPol.FullName $s3pol
       aws iam put-role-policy --role-name $LAMBDA_EXEC_ROLE_NAME --policy-name "S3CsvWritePolicy" --policy-document "file://$($tmpPol.FullName)" | Out-Null
     }
 
@@ -168,11 +172,24 @@ if ($ENV_VARS.ContainsKey('S3_PREFIX') -and [string]::IsNullOrWhiteSpace($ENV_VA
   $ENV_VARS.Remove('S3_PREFIX') | Out-Null
 }
 
+# --environment는 변수 전체를 덮어씀 → 함수에만 있는 값(MODE 등)이 지워지지 않도록 기존 값에 병합 (스크립트 값 우선)
+$mergedVars = @{}
+$curVars = aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --region $AWS_REGION `
+  --query "Configuration.Environment.Variables" --output json | Out-String | ConvertFrom-Json
+if ($curVars) {
+  $curVars.PSObject.Properties | ForEach-Object { $mergedVars[$_.Name] = $_.Value }
+}
+$ENV_VARS.GetEnumerator() | ForEach-Object { $mergedVars[$_.Key] = $_.Value }
+$ENV_VARS = $mergedVars
+
 # JSON을 임시 파일에 쓰고 file:// 로 전달 (따옴표/이스케이프 이슈 회피)
 $envObj  = @{ Variables = $ENV_VARS }
 $tmpEnv  = New-TmpFile
 $envJson = $envObj | ConvertTo-Json -Compress -Depth 5
-$envJson | Set-Content -LiteralPath $tmpEnv.FullName -Encoding UTF8 -NoNewline
+Write-Utf8NoBom $tmpEnv.FullName $envJson
+
+# 코드 업데이트 진행 중엔 설정 변경이 ResourceConflictException으로 거부됨
+aws lambda wait function-updated-v2 --function-name $LAMBDA_FUNCTION_NAME --region $AWS_REGION
 
 aws lambda update-function-configuration `
   --function-name $LAMBDA_FUNCTION_NAME `
@@ -180,6 +197,7 @@ aws lambda update-function-configuration `
   --memory-size $MEMORY_MB `
   --environment file://$($tmpEnv.FullName) `
   --region $AWS_REGION | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Lambda configuration update failed." }
 
 # 출력 (배열로 만든 뒤 -join)
 $fnArn   = (aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --region $AWS_REGION --query "Configuration.FunctionArn" --output text)
