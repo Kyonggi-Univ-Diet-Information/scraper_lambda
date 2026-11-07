@@ -3,7 +3,9 @@
 웹훅 URL은 .env 또는 환경변수 DISCORD_WEBHOOK_URL 에서 읽음.
 """
 import os
+import sys
 import json
+import datetime
 import traceback
 import urllib.request
 import urllib.error
@@ -40,23 +42,30 @@ def send_discord(content: str) -> dict:
         return {"status": "failed", "error": str(e)}
 
 
-def run():
+def run() -> int:
     try:
         result = main.lambda_handler({}, None)
         if not result.get("ok"):
             raise Exception(result.get("error", "lambda_handler returned ok=False"))
-
-        content = "✅ Scraper 주간 점검 성공"
     except Exception as e:
+        if "No data scraped" in str(e):
+            print("메뉴 미게시: 다음 회차에 재시도")
+            now = datetime.datetime.now()
+            if now.weekday() == 4 and now.hour >= 13:  # 금요일 마지막 시도
+                print(send_discord("⚠️ 금요일까지 이번 주 메뉴를 찾지 못함 (미게시 또는 사이트 변경)"))
+            return 1
+
         cause = traceback.format_exc()[-1500:]  # 디스코드 메시지 2000자 제한
-        content = (
+        print(send_discord(
             "⚠️ Scraper 주간 점검 실패 ⚠️\n\n"
             f"**Error**: {type(e).__name__}: {e}\n"
             f"**Cause**: ```\n{cause}\n```"
-        )
+        ))
+        return 1
 
-    print(send_discord(content))
+    print(send_discord("✅ Scraper 주간 점검 성공"))
+    return 0
 
 
 if __name__ == "__main__":
-    run()
+    sys.exit(run())
