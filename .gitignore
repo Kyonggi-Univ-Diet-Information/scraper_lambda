@@ -3,3 +3,4 @@ output.csv
 response.json
 .env
 *.ps1
+.weekly_done
